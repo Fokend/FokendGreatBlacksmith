@@ -1,0 +1,15 @@
+name: FokendGreatBlacksmith
+version: '${version}'
+main: me.fokend.greatblacksmith.FokendGreatBlacksmith
+api-version: '1.21'
+authors: [Fokend]
+description: Дандж Великого Кузнеца (пустырь, волны сильных мобов, Житак-торговец, трейлер с продавцом, овер-лимитная наковальня)
+commands:
+  blacksmith:
+    description: Управление данджем Великого Кузнеца, лавкой Житака и артефактами
+    usage: /blacksmith <spawn|here|stop|status|shop|shopcheck|givecore|giveitem|givebook>
+    aliases: [greatblacksmith, kuznec]
+permissions:
+  greatblacksmith.admin:
+    description: Управление данджем Великого Кузнеца
+    default: op
