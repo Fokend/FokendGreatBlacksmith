@@ -86,7 +86,18 @@ public final class AnvilOverlevelListener implements Listener {
         if (enchant.equals(Enchantment.EFFICIENCY)) return 6;
         if (enchant.equals(Enchantment.POWER)) return 6;
         if (enchant.equals(Enchantment.FEATHER_FALLING)) return 5;
-        // Все остальные чары (Mending, Silk Touch, Fire Aspect и т.д.) остаются на ванильном лимите
+        if (enchant.equals(Enchantment.FIRE_ASPECT)) return 3;
+        if (enchant.equals(Enchantment.LOOTING)) return 4;
+        if (enchant.equals(Enchantment.FORTUNE)) return 4;
+        if (enchant.equals(Enchantment.THORNS)) return 4;
+        if (enchant.equals(Enchantment.SWEEPING_EDGE)) return 4;
+        if (enchant.equals(Enchantment.KNOCKBACK)) return 3;
+        if (enchant.equals(Enchantment.PUNCH)) return 3;
+        if (enchant.equals(Enchantment.RESPIRATION)) return 4;
+        if (enchant.equals(Enchantment.AQUA_AFFINITY)) return 2;
+        if (enchant.equals(Enchantment.QUICK_CHARGE)) return 4;
+        if (enchant.equals(Enchantment.PIERCING)) return 5;
+        // Все остальные чары (Mending, Silk Touch и т.д.) остаются на ванильном лимите
         return enchant.getMaxLevel();
     }
 
@@ -97,6 +108,17 @@ public final class AnvilOverlevelListener implements Listener {
         if (enchant.equals(Enchantment.EFFICIENCY)) return 7;
         if (enchant.equals(Enchantment.POWER)) return 7;
         if (enchant.equals(Enchantment.FEATHER_FALLING)) return 6;
+        if (enchant.equals(Enchantment.FIRE_ASPECT)) return 4;
+        if (enchant.equals(Enchantment.LOOTING)) return 5;
+        if (enchant.equals(Enchantment.FORTUNE)) return 5;
+        if (enchant.equals(Enchantment.THORNS)) return 5;
+        if (enchant.equals(Enchantment.SWEEPING_EDGE)) return 5;
+        if (enchant.equals(Enchantment.KNOCKBACK)) return 4;
+        if (enchant.equals(Enchantment.PUNCH)) return 4;
+        if (enchant.equals(Enchantment.RESPIRATION)) return 5;
+        if (enchant.equals(Enchantment.AQUA_AFFINITY)) return 3;
+        if (enchant.equals(Enchantment.QUICK_CHARGE)) return 5;
+        if (enchant.equals(Enchantment.PIERCING)) return 6;
         // Одноуровневые чары (Mending, Silk Touch, Infinity и т.д.) повышать бессмысленно
         if (enchant.getMaxLevel() <= 1) return enchant.getMaxLevel();
         return enchant.getMaxLevel() + 1;
@@ -106,6 +128,11 @@ public final class AnvilOverlevelListener implements Listener {
         if (enchant.equals(Enchantment.SHARPNESS) || enchant.equals(Enchantment.PROTECTION)) return 4;
         if (enchant.equals(Enchantment.POWER) || enchant.equals(Enchantment.FEATHER_FALLING)) return 3;
         if (enchant.equals(Enchantment.UNBREAKING) || enchant.equals(Enchantment.EFFICIENCY)) return 2;
+        if (enchant.equals(Enchantment.FIRE_ASPECT) || enchant.equals(Enchantment.LOOTING) || enchant.equals(Enchantment.FORTUNE)) return 4;
+        if (enchant.equals(Enchantment.THORNS) || enchant.equals(Enchantment.SWEEPING_EDGE)) return 3;
+        if (enchant.equals(Enchantment.KNOCKBACK) || enchant.equals(Enchantment.PUNCH)) return 2;
+        if (enchant.equals(Enchantment.RESPIRATION) || enchant.equals(Enchantment.AQUA_AFFINITY)) return 2;
+        if (enchant.equals(Enchantment.QUICK_CHARGE) || enchant.equals(Enchantment.PIERCING)) return 2;
         return 3;
     }
 

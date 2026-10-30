@@ -6,6 +6,7 @@ import java.util.UUID;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
+import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
@@ -18,6 +19,7 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.FishHook;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Projectile;
 import org.bukkit.entity.ThrownPotion;
 import org.bukkit.entity.WindCharge;
 import org.bukkit.event.EventHandler;
@@ -28,7 +30,9 @@ import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityRegainHealthEvent;
 import org.bukkit.event.entity.EntityResurrectEvent;
+import org.bukkit.event.entity.EntityShootBowEvent;
 import org.bukkit.event.entity.PotionSplashEvent;
+import org.bukkit.event.entity.ProjectileHitEvent;
 import org.bukkit.event.entity.ProjectileLaunchEvent;
 import org.bukkit.event.inventory.BrewEvent;
 import org.bukkit.event.player.PlayerFishEvent;
@@ -67,6 +71,9 @@ public final class BlacksmithCombatAndPotionListener implements Listener {
     private final Map<UUID, Long> groundedUntil = new HashMap<>();
     private final Map<UUID, Long> slagBurnUntil = new HashMap<>();
     private final Map<UUID, Long> anvilTotemCooldowns = new HashMap<>();
+    private final Map<UUID, Long> warhammerSlamCooldowns = new HashMap<>();
+    private final Map<UUID, Long> vulcanSteamCooldowns = new HashMap<>();
+    private final Map<UUID, Long> titanDraughtCooldowns = new HashMap<>();
 
     public BlacksmithCombatAndPotionListener(FokendGreatBlacksmith plugin) {
         this.plugin = plugin;
@@ -83,6 +90,9 @@ public final class BlacksmithCombatAndPotionListener implements Listener {
         groundedUntil.clear();
         slagBurnUntil.clear();
         anvilTotemCooldowns.clear();
+        warhammerSlamCooldowns.clear();
+        vulcanSteamCooldowns.clear();
+        titanDraughtCooldowns.clear();
     }
 
     @EventHandler
@@ -96,6 +106,9 @@ public final class BlacksmithCombatAndPotionListener implements Listener {
         groundedUntil.remove(id);
         slagBurnUntil.remove(id);
         anvilTotemCooldowns.remove(id);
+        warhammerSlamCooldowns.remove(id);
+        vulcanSteamCooldowns.remove(id);
+        titanDraughtCooldowns.remove(id);
     }
 
     private String getSpecialId(ItemStack item) {
@@ -137,6 +150,28 @@ public final class BlacksmithCombatAndPotionListener implements Listener {
                     }
                 }, 1L);
             }
+            return;
+        }
+
+        if ("titan_draught".equals(getSpecialId(item))) {
+            long now = System.currentTimeMillis();
+            long readyAt = titanDraughtCooldowns.getOrDefault(player.getUniqueId(), 0L);
+            if (now < readyAt) {
+                long rem = (readyAt - now + 999L) / 1000L;
+                event.setCancelled(true);
+                player.sendActionBar(Component.text("⏳ Эликсир Титана перезаряжается: " + rem + " сек.", NamedTextColor.RED));
+                return;
+            }
+            titanDraughtCooldowns.put(player.getUniqueId(), now + 45_000L);
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (!player.isOnline()) return;
+                player.addPotionEffect(new PotionEffect(PotionEffectType.ABSORPTION, 20 * 25, 2)); // 6 golden hearts
+                player.addPotionEffect(new PotionEffect(PotionEffectType.RESISTANCE, 20 * 25, 1)); // Resistance II
+                player.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 20 * 25, 0));   // Slowness I
+                player.playSound(player.getLocation(), Sound.ENTITY_IRON_GOLEM_REPAIR, 1.2F, 0.8F);
+                player.getWorld().spawnParticle(Particle.LAVA, player.getLocation().add(0, 1, 0), 15, 0.4, 0.6, 0.4, 0.05);
+                player.sendMessage(Component.text("✦ Вы выпили Эликсир Титана! (+6 сердец и Сопротивление II на 25 сек.)", NamedTextColor.LIGHT_PURPLE));
+            });
             return;
         }
 
@@ -274,20 +309,52 @@ public final class BlacksmithCombatAndPotionListener implements Listener {
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
-    public void onMaceStickAttack(EntityDamageByEntityEvent event) {
-        if (!(event.getDamager() instanceof Player attacker) || !(event.getEntity() instanceof LivingEntity victim)) {
+    public void onCombatAttackAndDefense(EntityDamageByEntityEvent event) {
+        // 1. Vulcan Shield reflection & steam burst when blocking
+        if (event.getEntity() instanceof Player victim && victim.isBlocking()) {
+            ItemStack activeShield = null;
+            if ("vulcan_shield".equals(getSpecialId(victim.getInventory().getItemInOffHand()))) {
+                activeShield = victim.getInventory().getItemInOffHand();
+            } else if ("vulcan_shield".equals(getSpecialId(victim.getInventory().getItemInMainHand()))) {
+                activeShield = victim.getInventory().getItemInMainHand();
+            }
+            if (activeShield != null && event.getDamager() instanceof LivingEntity damager) {
+                double originalDamage = event.getDamage();
+                double reflectDamage = Math.max(3.0D, originalDamage * 0.40D);
+                damager.damage(reflectDamage, victim);
+                damager.setFireTicks(80);
+                damager.addPotionEffect(new PotionEffect(PotionEffectType.BLINDNESS, 60, 0));
+                Location hitLoc = victim.getLocation().add(0, 1.0, 0);
+                hitLoc.getWorld().playSound(hitLoc, Sound.BLOCK_LAVA_EXTINGUISH, 1.3F, 1.0F);
+                hitLoc.getWorld().spawnParticle(Particle.CAMPFIRE_COSY_SMOKE, hitLoc, 20, 0.3, 0.3, 0.3, 0.05);
+                hitLoc.getWorld().spawnParticle(Particle.FLAME, hitLoc, 12, 0.3, 0.3, 0.3, 0.08);
+                victim.sendActionBar(Component.text("🛡 Бастион Гефеста отразил урон паром и огнем!", NamedTextColor.GOLD));
+            }
+        }
+
+        // 2. Weapon attacks
+        if (!(event.getDamager() instanceof Player attacker) || !(event.getEntity() instanceof LivingEntity victimEntity)) {
             return;
         }
         if (event.getCause() != EntityDamageEvent.DamageCause.ENTITY_ATTACK) return;
         ItemStack weapon = attacker.getInventory().getItemInMainHand();
-        if (!"mace_stick".equals(getSpecialId(weapon))) return;
+        String special = getSpecialId(weapon);
+
+        if ("forge_warhammer".equals(special)) {
+            victimEntity.setFireTicks(100);
+            victimEntity.getWorld().spawnParticle(Particle.LAVA, victimEntity.getLocation().add(0, 1, 0), 10, 0.3, 0.4, 0.3, 0.05);
+            victimEntity.getWorld().playSound(victimEntity.getLocation(), Sound.BLOCK_FIRE_EXTINGUISH, 0.8F, 1.5F);
+            return;
+        }
+
+        if (!"mace_stick".equals(special)) return;
 
         long now = System.currentTimeMillis();
         float fallDist = attacker.getFallDistance();
         boolean isJumpingCrit = fallDist > 0.0F && !attacker.isOnGround() && !attacker.isInWater();
 
-        // 1. Shield Breaker on jump hit
-        if (isJumpingCrit && victim instanceof Player targetPlayer && targetPlayer.isBlocking()) {
+        // Shield Breaker on jump hit
+        if (isJumpingCrit && victimEntity instanceof Player targetPlayer && targetPlayer.isBlocking()) {
             targetPlayer.setCooldown(Material.SHIELD, 100); // 5 seconds shield disable
             targetPlayer.clearActiveItem();
             double bleedThrough = Math.max(2.0D, event.getDamage() * 0.30D);
@@ -298,7 +365,7 @@ public final class BlacksmithCombatAndPotionListener implements Listener {
             targetPlayer.sendActionBar(Component.text("⚠ Ваш щит оглушён Палкой-Булавой на 5 секунд!", NamedTextColor.RED));
         }
 
-        // 2. Mini-slam bonus when falling 4+ blocks (capped at +10 damage, cancels fall damage)
+        // Mini-slam bonus when falling 4+ blocks (capped at +10 damage, cancels fall damage)
         if (fallDist >= 4.0F) {
             long slamReady = maceSlamCooldowns.getOrDefault(attacker.getUniqueId(), 0L);
             if (now >= slamReady) {
@@ -307,12 +374,93 @@ public final class BlacksmithCombatAndPotionListener implements Listener {
                 event.setDamage(event.getDamage() + bonusDamage);
                 attacker.setFallDistance(0.0F);
 
-                Location hitLoc = victim.getLocation();
+                Location hitLoc = victimEntity.getLocation();
                 hitLoc.getWorld().spawnParticle(Particle.EXPLOSION, hitLoc.clone().add(0, 0.5, 0), 2, 0.2, 0.2, 0.2, 0.02);
                 hitLoc.getWorld().playSound(hitLoc, Sound.ITEM_MACE_SMASH_GROUND, 1.2F, 1.0F);
                 attacker.sendActionBar(Component.text(
                         String.format("⚒ Инерционный удар Булавы: +%.1f ед. урона!", bonusDamage),
                         NamedTextColor.GOLD));
+            }
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onWarhammerInteract(PlayerInteractEvent event) {
+        if (event.getHand() != EquipmentSlot.HAND) return;
+        if (event.getAction() != Action.RIGHT_CLICK_AIR && event.getAction() != Action.RIGHT_CLICK_BLOCK) return;
+        Player player = event.getPlayer();
+        ItemStack item = event.getItem();
+        if (!"forge_warhammer".equals(getSpecialId(item))) return;
+
+        if (event.getAction() == Action.RIGHT_CLICK_BLOCK && event.getClickedBlock() != null
+                && event.getClickedBlock().getType().isInteractable() && !player.isSneaking()) {
+            return;
+        }
+
+        long now = System.currentTimeMillis();
+        long readyAt = warhammerSlamCooldowns.getOrDefault(player.getUniqueId(), 0L);
+        if (now < readyAt) {
+            long rem = (readyAt - now + 999L) / 1000L;
+            player.sendActionBar(Component.text("⏳ Молот Вулкана перезаряжается: " + rem + " сек.", NamedTextColor.RED));
+            return;
+        }
+
+        warhammerSlamCooldowns.put(player.getUniqueId(), now + 12_000L);
+        Location center = player.getLocation();
+        center.getWorld().playSound(center, Sound.ITEM_MACE_SMASH_GROUND, 1.4F, 0.8F);
+        center.getWorld().playSound(center, Sound.BLOCK_ANVIL_LAND, 1.0F, 0.7F);
+        center.getWorld().spawnParticle(Particle.LAVA, center.clone().add(0, 0.5, 0), 30, 1.5, 0.3, 1.5, 0.1);
+        center.getWorld().spawnParticle(Particle.EXPLOSION, center.clone().add(0, 0.5, 0), 4, 1.0, 0.2, 1.0, 0.05);
+
+        for (Entity nearby : center.getWorld().getNearbyEntities(center, 6.0D, 3.5D, 6.0D)) {
+            if (nearby instanceof LivingEntity target && !target.equals(player) && !(target instanceof ArmorStand)) {
+                if (target instanceof Player tp && (tp.getGameMode() == GameMode.SPECTATOR || tp.getGameMode() == GameMode.CREATIVE)) {
+                    continue;
+                }
+                if (target.getPersistentDataContainer().has(new NamespacedKey(plugin, "blacksmith_seller"), PersistentDataType.BYTE)) {
+                    continue;
+                }
+                Vector push = target.getLocation().toVector().subtract(center.toVector());
+                if (push.lengthSquared() < 0.01D) {
+                    push = new Vector(0.2D, 0.75D, 0.2D);
+                } else {
+                    push.normalize().multiply(0.8D).setY(0.72D);
+                }
+                target.setVelocity(push);
+                target.damage(12.0D, player);
+                target.setFireTicks(80);
+                target.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 80, 2)); // Slowness III
+                target.addPotionEffect(new PotionEffect(PotionEffectType.WEAKNESS, 80, 1)); // Weakness II
+            }
+        }
+        player.sendActionBar(Component.text("⚒ Земля содрогнулась от сокрушительного удара Молота!", NamedTextColor.GOLD));
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onCrossbowShoot(EntityShootBowEvent event) {
+        ItemStack bow = event.getBow();
+        if (bow == null || !"slag_crossbow".equals(getSpecialId(bow))) return;
+        Entity proj = event.getProjectile();
+        proj.getPersistentDataContainer().set(new NamespacedKey(plugin, "slag_arrow"), PersistentDataType.BYTE, (byte) 1);
+        proj.setVisualFire(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onSlagArrowHit(ProjectileHitEvent event) {
+        if (!(event.getEntity() instanceof Projectile proj)) return;
+        if (!proj.getPersistentDataContainer().has(new NamespacedKey(plugin, "slag_arrow"), PersistentDataType.BYTE)) return;
+        Location loc = proj.getLocation();
+        loc.getWorld().spawnParticle(Particle.LAVA, loc, 25, 0.5, 0.5, 0.5, 0.1);
+        loc.getWorld().spawnParticle(Particle.EXPLOSION, loc, 3, 0.3, 0.3, 0.3, 0.05);
+        loc.getWorld().playSound(loc, Sound.ENTITY_GENERIC_EXPLODE, 1.2F, 1.3F);
+        Entity damager = proj.getShooter() instanceof Entity shooter ? shooter : null;
+        for (Entity nearby : loc.getWorld().getNearbyEntities(loc, 4.0D, 3.0D, 4.0D)) {
+            if (nearby instanceof LivingEntity target && !(target instanceof ArmorStand)) {
+                if (damager != null && nearby.equals(damager)) continue;
+                if (target instanceof Player p && (p.getGameMode() == GameMode.CREATIVE || p.getGameMode() == GameMode.SPECTATOR)) continue;
+                if (target.getPersistentDataContainer().has(new NamespacedKey(plugin, "blacksmith_seller"), PersistentDataType.BYTE)) continue;
+                target.damage(9.0D, damager);
+                target.setFireTicks(100);
             }
         }
     }
@@ -337,12 +485,7 @@ public final class BlacksmithCombatAndPotionListener implements Listener {
         }
 
         long now = System.currentTimeMillis();
-        long readyAt = grappleCooldowns.getOrDefault(player.getUniqueId(), 0L);
-        if (now < readyAt) {
-            long rem = (readyAt - now + 999L) / 1000L;
-            player.sendActionBar(Component.text("⏳ Крюк-кошка перезаряжается: " + rem + " сек.", NamedTextColor.RED));
-            return;
-        }
+        // Крюк-кошка: кулдаун полностью снят по запросу пользователя!
 
         FishHook hook = event.getHook();
 
@@ -361,7 +504,6 @@ public final class BlacksmithCombatAndPotionListener implements Listener {
                 targetPlayer.setCooldown(Material.WIND_CHARGE, 60);
                 targetPlayer.sendMessage(Component.text("⛓ Крюк Шлакосборщика притянул вас и заблокировал Жемчуг/Ветер на 3 сек.!", NamedTextColor.RED));
             }
-            grappleCooldowns.put(player.getUniqueId(), now + 20_000L);
             player.playSound(player.getLocation(), Sound.BLOCK_CHAIN_PLACE, 1.2F, 0.8F);
             return;
         }
@@ -405,7 +547,6 @@ public final class BlacksmithCombatAndPotionListener implements Listener {
 
                     // Grant landing fall protection for up to 5 seconds
                     grappleFallImmunity.put(player.getUniqueId(), now + 5_000L);
-                    grappleCooldowns.put(player.getUniqueId(), now + 14_000L);
 
                     player.playSound(player.getLocation(), Sound.ENTITY_BREEZE_JUMP, 1.0F, 1.1F);
                     player.playSound(hookLoc, Sound.BLOCK_CHAIN_PLACE, 0.9F, 1.4F);

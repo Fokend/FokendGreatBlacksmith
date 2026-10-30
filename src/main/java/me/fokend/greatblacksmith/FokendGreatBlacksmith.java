@@ -330,18 +330,17 @@ public final class FokendGreatBlacksmith extends JavaPlugin implements Listener,
 
             case COUNTDOWN -> {
                 List<Player> inside = getValidPlayersOnWasteland(session);
+                if (inside.isEmpty()) {
+                    triggerFailure(session, "в зоне данжа не осталось игроков");
+                    return;
+                }
                 for (Player p : inside) {
                     session.participants.add(p.getUniqueId());
-                }
-                String leaver = findLeaverName(session);
-                if (leaver != null) {
-                    triggerFailure(session, leaver);
-                    return;
                 }
                 long rem = Math.max(0L, session.stateDeadlineMillis - now);
                 float progress = Math.max(0.0F, Math.min(1.0F, (float) rem / (float) WAITING_START_DELAY_MILLIS));
                 session.bossBar.name(Component.text(
-                        "⚔ Подготовка к бою: " + ((rem + 999L) / 1000L) + " сек. (Игроков: " + session.participants.size() + ")",
+                        "⚔ Подготовка к бою: " + ((rem + 999L) / 1000L) + " сек. (Игроков в зоне: " + inside.size() + ")",
                         NamedTextColor.YELLOW));
                 session.bossBar.progress(progress);
                 if (now >= session.stateDeadlineMillis) {
@@ -350,24 +349,24 @@ public final class FokendGreatBlacksmith extends JavaPlugin implements Listener,
             }
 
             case WAVES -> {
+                List<Player> inside = getValidPlayersOnWasteland(session);
+                // Проигрыш считается ТОЛЬКО когда в зоне данжа не осталось игроков
+                if (inside.isEmpty()) {
+                    triggerFailure(session, "в зоне данжа не осталось игроков");
+                    return;
+                }
+
                 // Add any new players who entered the wasteland mid-fight and scale total waves up if needed
-                for (Player p : getValidPlayersOnWasteland(session)) {
+                for (Player p : inside) {
                     if (session.participants.add(p.getUniqueId())) {
                         int recalculatedWaves = calculateTotalWaves(session.participants.size());
                         if (recalculatedWaves > session.totalWaves) {
                             session.totalWaves = recalculatedWaves;
                         }
                         p.sendMessage(Component.text(
-                                "⚔ Вы присоединились к битве на пустыре! Сложность увеличена, покидать пустырь нельзя!",
+                                "⚔ Вы присоединились к битве на пустыре! Сложность увеличена!",
                                 NamedTextColor.RED));
                     }
-                }
-
-                // Check failure condition: if even 1 participant left the wasteland
-                String leaver = findLeaverName(session);
-                if (leaver != null) {
-                    triggerFailure(session, leaver);
-                    return;
                 }
 
                 // Maintain active mobs (remove dead/invalid, keep inside wasteland, keep Warden angry)
@@ -384,7 +383,7 @@ public final class FokendGreatBlacksmith extends JavaPlugin implements Listener,
                     session.bossBar.name(Component.text(
                             "⚔ Волна " + session.currentWave + "/" + session.totalWaves
                                     + " | Осталось монстров: " + aliveCount
-                                    + " | Игроков: " + session.participants.size(),
+                                    + " | Бойцов в зоне: " + inside.size(),
                             NamedTextColor.RED));
                     session.bossBar.color(BossBar.Color.RED);
                     float prog = Math.max(0.05F, Math.min(1.0F, (float) session.currentWave / (float) session.totalWaves));
@@ -700,17 +699,15 @@ public final class FokendGreatBlacksmith extends JavaPlugin implements Listener,
         });
     }
 
-    private void triggerFailure(DungeonSession session, String leaverName) {
+    private void triggerFailure(DungeonSession session, String reason) {
         if (session.state == DungeonState.FAILED) return;
         session.state = DungeonState.FAILED;
         session.stateDeadlineMillis = System.currentTimeMillis() + FAILED_DESPAWN_MILLIS;
 
         killAllDungeonMobs(session);
-        updateShutterHologram(session, Component.text("✖ ПРОВАЛ! Игрок " + leaverName + " покинул пустырь!", NamedTextColor.RED));
+        updateShutterHologram(session, Component.text("✖ ПРОВАЛ! " + reason, NamedTextColor.RED));
 
-        Component failMsg = Component.text("✖ [Великий Кузнец] Провал! Игрок ", NamedTextColor.RED)
-                .append(Component.text(leaverName, NamedTextColor.YELLOW))
-                .append(Component.text(" покинул пустырь! Все монстры погибли, дандж исчезнет через 1 минуту без награды.", NamedTextColor.RED));
+        Component failMsg = Component.text("✖ [Великий Кузнец] Провал (" + reason + ")! Все монстры погибли, дандж исчезнет через 1 минуту без награды.", NamedTextColor.RED);
         Bukkit.broadcast(failMsg);
         session.world.playSound(session.center, Sound.ENTITY_WITHER_SPAWN, 1.2F, 0.7F);
     }
@@ -1350,19 +1347,40 @@ public final class FokendGreatBlacksmith extends JavaPlugin implements Listener,
         pool.add(createTrade(new ItemStack(Material.RESPAWN_ANCHOR, 4), priceDiamonds(rnd, 48, 60), 4));
         pool.add(createTrade(new ItemStack(Material.EXPERIENCE_BOTTLE, 64), priceDiamonds(rnd, 48, 58), 5));
 
-        // 6. И многое другое (Over-enchanted Blacksmith gear, books, rare materials)
+        // 6. И многое другое (Over-enchanted Blacksmith gear, books, rare materials, unique weapons)
         pool.add(createTrade(createBlacksmithBlade(), priceCrapples(rnd, 20, 32), 1));
         pool.add(createTrade(createBlacksmithChestplate(), priceCrapples(rnd, 22, 32), 1));
+        pool.add(createTrade(createBlacksmithHelmet(), priceCrapples(rnd, 18, 28), 1));
+        pool.add(createTrade(createBlacksmithBoots(), priceCrapples(rnd, 18, 28), 1));
+        pool.add(createTrade(createForgeWarhammer(), priceCrapples(rnd, 20, 32), 1));
+        pool.add(createTrade(createVulcanShield(), priceCrapples(rnd, 16, 28), 1));
+        pool.add(createTrade(createTitanDraught(), priceCrapples(rnd, 6, 12), 3));
+        pool.add(createTrade(createSlagCrossbow(), priceCrapples(rnd, 14, 26), 1));
+
         List<MerchantRecipe> overBooks = new ArrayList<>();
         overBooks.add(createTrade(createOverleveledBook(Enchantment.SHARPNESS, 6, "Книга Кузнеца: Острота VI"), priceCrapples(rnd, 14, 28), 2));
         overBooks.add(createTrade(createOverleveledBook(Enchantment.PROTECTION, 5, "Книга Кузнеца: Защита V"), priceCrapples(rnd, 14, 28), 2));
         overBooks.add(createTrade(createOverleveledBook(Enchantment.UNBREAKING, 4, "Книга Кузнеца: Прочность IV"), priceCrapples(rnd, 10, 20), 2));
+        overBooks.add(createTrade(createOverleveledBook(Enchantment.EFFICIENCY, 6, "Книга Кузнеца: Эффективность VI"), priceCrapples(rnd, 10, 20), 2));
+        overBooks.add(createTrade(createOverleveledBook(Enchantment.POWER, 6, "Книга Кузнеца: Сила VI"), priceCrapples(rnd, 12, 22), 2));
+        overBooks.add(createTrade(createOverleveledBook(Enchantment.FEATHER_FALLING, 5, "Книга Кузнеца: Невесомость V"), priceCrapples(rnd, 10, 18), 2));
+        overBooks.add(createTrade(createOverleveledBook(Enchantment.FIRE_ASPECT, 3, "Книга Кузнеца: Заговор Огня III"), priceCrapples(rnd, 10, 18), 2));
+        overBooks.add(createTrade(createOverleveledBook(Enchantment.LOOTING, 4, "Книга Кузнеца: Добыча IV"), priceCrapples(rnd, 12, 24), 2));
+        overBooks.add(createTrade(createOverleveledBook(Enchantment.FORTUNE, 4, "Книга Кузнеца: Удача IV"), priceCrapples(rnd, 12, 24), 2));
+        overBooks.add(createTrade(createOverleveledBook(Enchantment.SWEEPING_EDGE, 4, "Книга Кузнеца: Разящий Клинок IV"), priceCrapples(rnd, 8, 16), 2));
+        overBooks.add(createTrade(createOverleveledBook(Enchantment.THORNS, 4, "Книга Кузнеца: Шипы IV"), priceCrapples(rnd, 8, 16), 2));
+        overBooks.add(createTrade(createOverleveledBook(Enchantment.KNOCKBACK, 3, "Книга Кузнеца: Отдача III"), priceCrapples(rnd, 8, 14), 2));
+        overBooks.add(createTrade(createOverleveledBook(Enchantment.PUNCH, 3, "Книга Кузнеца: Опрокидывание III"), priceCrapples(rnd, 8, 14), 2));
+        overBooks.add(createTrade(createOverleveledBook(Enchantment.RESPIRATION, 4, "Книга Кузнеца: Подводное Дыхание IV"), priceCrapples(rnd, 8, 14), 2));
+        overBooks.add(createTrade(createOverleveledBook(Enchantment.AQUA_AFFINITY, 2, "Книга Кузнеца: Подводник II"), priceCrapples(rnd, 8, 14), 2));
+        overBooks.add(createTrade(createOverleveledBook(Enchantment.QUICK_CHARGE, 4, "Книга Кузнеца: Быстрая Перезарядка IV"), priceCrapples(rnd, 10, 18), 2));
+        overBooks.add(createTrade(createOverleveledBook(Enchantment.PIERCING, 5, "Книга Кузнеца: Пронзающая Стрела V"), priceCrapples(rnd, 10, 18), 2));
         pool.addAll(overBooks);
         pool.add(createTrade(new ItemStack(Material.NETHERITE_INGOT, rnd.nextInt(2, 5)), priceCrapples(rnd, 6, 14), 3));
         pool.add(createTrade(new ItemStack(Material.NETHER_STAR, 1), priceCrapples(rnd, 8, 16), 2));
 
         // Always include the signature items (Mace-textured Stick, Spawner-textured Boat, at least 2 Upgrade Cores,
-        // at least 2 enhanced Potions, and PvP consumables) + shuffle the rest for random assortment!
+        // at least 2 over-leveled books, and PvP consumables) + shuffle the rest for random assortment!
         List<MerchantRecipe> guaranteed = new ArrayList<>();
         guaranteed.add(pool.get(0)); // Палка с текстурой булавы
         guaranteed.add(pool.get(1)); // Лодка с текстурой спавнера
@@ -1371,14 +1389,15 @@ public final class FokendGreatBlacksmith extends JavaPlugin implements Listener,
         if (coreB >= coreA) coreB++; // два РАЗНЫХ ядра (раньше могло выпасть дубликатом)
         guaranteed.add(pool.get(coreA)); // Ядро улучшения #1
         guaranteed.add(pool.get(coreB)); // Ядро улучшения #2
-        guaranteed.add(overBooks.get(rnd.nextInt(overBooks.size()))); // минимум одна овер-лимитная книга
+        guaranteed.add(overBooks.get(rnd.nextInt(overBooks.size()))); // овер-лимитная книга #1
+        guaranteed.add(overBooks.get(rnd.nextInt(overBooks.size()))); // овер-лимитная книга #2
 
         List<MerchantRecipe> remaining = new ArrayList<>(pool.subList(2, pool.size()));
         Collections.shuffle(remaining, rnd);
 
         session.trades.addAll(guaranteed);
         for (MerchantRecipe r : remaining) {
-            if (session.trades.size() >= 12) break;
+            if (session.trades.size() >= 18) break;
             if (!session.trades.contains(r)) {
                 session.trades.add(r);
             }
@@ -1647,8 +1666,8 @@ public final class FokendGreatBlacksmith extends JavaPlugin implements Listener,
             meta.displayName(mm.deserialize("<gradient:#ff8008:#ffc837><bold>✦ Крюк-Кошка Шлакосборщика ✦</bold></gradient>")
                     .decoration(TextDecoration.ITALIC, false));
             meta.lore(List.of(
-                    Component.text("Гарпун [в блок]: рывок к точке зацепа (КД 14 сек).", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false),
-                    Component.text("Стяжка [в игрока]: притягивает и блокирует Жемчуг/Ветер на 3 сек (КД 20 сек).", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false)));
+                    Component.text("Гарпун [в блок]: стремительный рывок к точке зацепа (Без кулдауна).", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false),
+                    Component.text("Стяжка [в игрока]: притягивает и блокирует Жемчуг/Ветер на 3 сек (Без кулдауна).", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false)));
             meta.setUnbreakable(true);
             meta.setEnchantmentGlintOverride(true);
             meta.getPersistentDataContainer().set(specialItemKey, PersistentDataType.STRING, "slag_grapple");
@@ -1682,8 +1701,8 @@ public final class FokendGreatBlacksmith extends JavaPlugin implements Listener,
                     .decoration(TextDecoration.ITALIC, false));
             meta.addEnchant(Enchantment.SHARPNESS, 6, true);
             meta.addEnchant(Enchantment.UNBREAKING, 4, true);
-            meta.addEnchant(Enchantment.FIRE_ASPECT, 2, true);
-            meta.addEnchant(Enchantment.LOOTING, 3, true);
+            meta.addEnchant(Enchantment.FIRE_ASPECT, 3, true);
+            meta.addEnchant(Enchantment.LOOTING, 4, true);
             sword.setItemMeta(meta);
         }
         return sword;
@@ -1701,6 +1720,122 @@ public final class FokendGreatBlacksmith extends JavaPlugin implements Listener,
             chest.setItemMeta(meta);
         }
         return chest;
+    }
+
+    private ItemStack createForgeWarhammer() {
+        ItemStack item = new ItemStack(Material.MACE);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.displayName(mm.deserialize("<gradient:#ff4500:#ff8c00><bold>⚒ Кузнечный Молот Вулкана ✦</bold></gradient>")
+                    .decoration(TextDecoration.ITALIC, false));
+            meta.lore(List.of(
+                    Component.text("Тяжелейший молот, выкованный в жерле подземной кузницы.", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false),
+                    Component.text("Удар: осыпает жертву искрами лавы и поджигает на 5 сек.", NamedTextColor.YELLOW).decoration(TextDecoration.ITALIC, false),
+                    Component.text("ПКМ [по земле]: сокрушительный удар в радиусе 6 блоков!", NamedTextColor.GOLD).decoration(TextDecoration.ITALIC, false),
+                    Component.text("  Наносит 12 урона, подбрасывает в воздух и накладывает", NamedTextColor.DARK_GRAY).decoration(TextDecoration.ITALIC, false),
+                    Component.text("  Замедление III и Слабость II на 4 сек (КД 12 сек).", NamedTextColor.DARK_GRAY).decoration(TextDecoration.ITALIC, false)));
+            meta.setUnbreakable(true);
+            meta.setEnchantmentGlintOverride(true);
+            meta.addEnchant(Enchantment.SHARPNESS, 6, true);
+            meta.addEnchant(Enchantment.UNBREAKING, 5, true);
+            meta.addEnchant(Enchantment.FIRE_ASPECT, 3, true);
+            meta.addEnchant(Enchantment.KNOCKBACK, 3, true);
+            meta.getPersistentDataContainer().set(specialItemKey, PersistentDataType.STRING, "forge_warhammer");
+            item.setItemMeta(meta);
+        }
+        return item;
+    }
+
+    private ItemStack createVulcanShield() {
+        ItemStack item = new ItemStack(Material.SHIELD);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.displayName(mm.deserialize("<gradient:#e65c00:#f9d423><bold>🛡 Бастион Гефеста ✦</bold></gradient>")
+                    .decoration(TextDecoration.ITALIC, false));
+            meta.lore(List.of(
+                    Component.text("Выкован из огнеупорной вулканической стали.", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false),
+                    Component.text("Блок удара: отражает 40% урона обратно атакующему,", NamedTextColor.YELLOW).decoration(TextDecoration.ITALIC, false),
+                    Component.text("выбрасывает облако перегретого пара, ослепляя", NamedTextColor.GOLD).decoration(TextDecoration.ITALIC, false),
+                    Component.text("и поджигая нападающего на 4 секунды.", NamedTextColor.GOLD).decoration(TextDecoration.ITALIC, false)));
+            meta.setUnbreakable(true);
+            meta.setEnchantmentGlintOverride(true);
+            meta.getPersistentDataContainer().set(specialItemKey, PersistentDataType.STRING, "vulcan_shield");
+            item.setItemMeta(meta);
+        }
+        return item;
+    }
+
+    private ItemStack createTitanDraught() {
+        ItemStack item = new ItemStack(Material.POTION);
+        org.bukkit.inventory.meta.PotionMeta pm = (org.bukkit.inventory.meta.PotionMeta) item.getItemMeta();
+        if (pm != null) {
+            pm.displayName(mm.deserialize("<gradient:#da22ff:#9733ee><bold>✦ Эликсир Титана ✦</bold></gradient>")
+                    .decoration(TextDecoration.ITALIC, false));
+            pm.setColor(Color.fromRGB(150, 0, 220));
+            pm.lore(List.of(
+                    Component.text("Тайное варево великих кузнецов.", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false),
+                    Component.text("Эффект при употреблении (25 сек.):", NamedTextColor.YELLOW).decoration(TextDecoration.ITALIC, false),
+                    Component.text("  + Поглощение III (+6 золотых сердец)", NamedTextColor.GOLD).decoration(TextDecoration.ITALIC, false),
+                    Component.text("  + Сопротивление II", NamedTextColor.GOLD).decoration(TextDecoration.ITALIC, false),
+                    Component.text("  + Спешка II", NamedTextColor.GOLD).decoration(TextDecoration.ITALIC, false),
+                    Component.text("Перезарядка: 45 сек.", NamedTextColor.RED).decoration(TextDecoration.ITALIC, false)));
+            pm.setEnchantmentGlintOverride(true);
+            pm.getPersistentDataContainer().set(specialItemKey, PersistentDataType.STRING, "titan_draught");
+            item.setItemMeta(pm);
+        }
+        return item;
+    }
+
+    private ItemStack createSlagCrossbow() {
+        ItemStack item = new ItemStack(Material.CROSSBOW);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.displayName(mm.deserialize("<gradient:#ff0844:#ffb199><bold>✦ Шлаковый Огнемёт Кузнеца ✦</bold></gradient>")
+                    .decoration(TextDecoration.ITALIC, false));
+            meta.lore(List.of(
+                    Component.text("Модифицированный кузнечный арбалет под жидкий шлак.", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false),
+                    Component.text("Стрелы детонируют при попадании, нанося 9 урона", NamedTextColor.YELLOW).decoration(TextDecoration.ITALIC, false),
+                    Component.text("в радиусе 4 блоков и поджигая врагов.", NamedTextColor.GOLD).decoration(TextDecoration.ITALIC, false)));
+            meta.setUnbreakable(true);
+            meta.addEnchant(Enchantment.QUICK_CHARGE, 4, true);
+            meta.addEnchant(Enchantment.PIERCING, 4, true);
+            meta.addEnchant(Enchantment.UNBREAKING, 4, true);
+            meta.getPersistentDataContainer().set(specialItemKey, PersistentDataType.STRING, "slag_crossbow");
+            item.setItemMeta(meta);
+        }
+        return item;
+    }
+
+    private ItemStack createBlacksmithHelmet() {
+        ItemStack helmet = new ItemStack(Material.NETHERITE_HELMET);
+        ItemMeta meta = helmet.getItemMeta();
+        if (meta != null) {
+            meta.displayName(mm.deserialize("<gradient:#f7971e:#ffd200><bold>👑 Венец Великого Кузнеца</bold></gradient>")
+                    .decoration(TextDecoration.ITALIC, false));
+            meta.addEnchant(Enchantment.PROTECTION, 5, true);
+            meta.addEnchant(Enchantment.RESPIRATION, 4, true);
+            meta.addEnchant(Enchantment.AQUA_AFFINITY, 2, true);
+            meta.addEnchant(Enchantment.UNBREAKING, 4, true);
+            meta.addEnchant(Enchantment.MENDING, 1, true);
+            helmet.setItemMeta(meta);
+        }
+        return helmet;
+    }
+
+    private ItemStack createBlacksmithBoots() {
+        ItemStack boots = new ItemStack(Material.NETHERITE_BOOTS);
+        ItemMeta meta = boots.getItemMeta();
+        if (meta != null) {
+            meta.displayName(mm.deserialize("<gradient:#f7971e:#ffd200><bold>👢 Сапоги Великого Кузнеца</bold></gradient>")
+                    .decoration(TextDecoration.ITALIC, false));
+            meta.addEnchant(Enchantment.PROTECTION, 5, true);
+            meta.addEnchant(Enchantment.FEATHER_FALLING, 5, true);
+            meta.addEnchant(Enchantment.DEPTH_STRIDER, 3, true);
+            meta.addEnchant(Enchantment.UNBREAKING, 4, true);
+            meta.addEnchant(Enchantment.MENDING, 1, true);
+            boots.setItemMeta(meta);
+        }
+        return boots;
     }
 
     private ItemStack createOverleveledBook(Enchantment enchant, int level, String title) {
@@ -1907,18 +2042,38 @@ public final class FokendGreatBlacksmith extends JavaPlugin implements Listener,
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         if (activeDungeon != null
-                && (activeDungeon.state == DungeonState.WAVES || activeDungeon.state == DungeonState.COUNTDOWN)
-                && activeDungeon.participants.contains(event.getPlayer().getUniqueId())) {
-            triggerFailure(activeDungeon, event.getPlayer().getName());
+                && (activeDungeon.state == DungeonState.WAVES || activeDungeon.state == DungeonState.COUNTDOWN)) {
+            activeDungeon.participants.remove(event.getPlayer().getUniqueId());
+            Bukkit.getScheduler().runTask(this, () -> {
+                if (activeDungeon != null && (activeDungeon.state == DungeonState.WAVES || activeDungeon.state == DungeonState.COUNTDOWN)) {
+                    List<Player> remaining = getValidPlayersOnWasteland(activeDungeon);
+                    if (remaining.isEmpty()) {
+                        triggerFailure(activeDungeon, "в зоне данжа не осталось игроков");
+                    }
+                }
+            });
         }
     }
 
     @EventHandler
     public void onPlayerDeath(PlayerDeathEvent event) {
         if (activeDungeon != null
-                && (activeDungeon.state == DungeonState.WAVES || activeDungeon.state == DungeonState.COUNTDOWN)
-                && activeDungeon.participants.contains(event.getEntity().getUniqueId())) {
-            triggerFailure(activeDungeon, event.getEntity().getName());
+                && (activeDungeon.state == DungeonState.WAVES || activeDungeon.state == DungeonState.COUNTDOWN)) {
+            Player dead = event.getEntity();
+            if (activeDungeon.participants.contains(dead.getUniqueId()) || isInsideWasteland(activeDungeon, dead.getLocation())) {
+                Bukkit.getScheduler().runTask(this, () -> {
+                    if (activeDungeon != null && (activeDungeon.state == DungeonState.WAVES || activeDungeon.state == DungeonState.COUNTDOWN)) {
+                        List<Player> remaining = getValidPlayersOnWasteland(activeDungeon);
+                        if (remaining.isEmpty()) {
+                            triggerFailure(activeDungeon, "в зоне данжа не осталось игроков");
+                        } else {
+                            for (Player survivor : remaining) {
+                                survivor.sendMessage(Component.text("☠ Игрок " + dead.getName() + " погиб! В зоне осталось бойцов: " + remaining.size(), NamedTextColor.YELLOW));
+                            }
+                        }
+                    }
+                });
+            }
         }
     }
 
@@ -2104,10 +2259,18 @@ public final class FokendGreatBlacksmith extends JavaPlugin implements Listener,
                     case "slag_grapple" -> createSlagGrapple();
                     case "slag_potion" -> createMoltenSlagPotion();
                     case "anvil_totem" -> createAnvilTotem();
+                    case "forge_warhammer" -> createForgeWarhammer();
+                    case "vulcan_shield" -> createVulcanShield();
+                    case "titan_draught" -> createTitanDraught();
+                    case "slag_crossbow" -> createSlagCrossbow();
+                    case "blacksmith_blade" -> createBlacksmithBlade();
+                    case "blacksmith_chestplate" -> createBlacksmithChestplate();
+                    case "blacksmith_helmet" -> createBlacksmithHelmet();
+                    case "blacksmith_boots" -> createBlacksmithBoots();
                     default -> null;
                 };
                 if (item == null) {
-                    sender.sendMessage(Component.text("Предметы: mace_stick, spawner_boat, slag_grapple, slag_potion, anvil_totem", NamedTextColor.YELLOW));
+                    sender.sendMessage(Component.text("Предметы: mace_stick, spawner_boat, slag_grapple, slag_potion, anvil_totem, forge_warhammer, vulcan_shield, titan_draught, slag_crossbow, blacksmith_blade, blacksmith_chestplate, blacksmith_helmet, blacksmith_boots", NamedTextColor.YELLOW));
                     return true;
                 }
                 player.getInventory().addItem(item);
@@ -2162,8 +2325,8 @@ public final class FokendGreatBlacksmith extends JavaPlugin implements Listener,
         if (args.length == 2 && (sender.hasPermission("greatblacksmith.admin") || sender.isOp())) {
             List<String> opts = switch (args[0].toLowerCase(Locale.ROOT)) {
                 case "givecore" -> List.of("cb_orange", "cb_purple", "cb_green", "cb_master");
-                case "giveitem" -> List.of("mace_stick", "spawner_boat", "slag_grapple", "slag_potion", "anvil_totem");
-                case "givebook" -> List.of("sharpness", "protection", "unbreaking", "efficiency", "power", "feather_falling");
+                case "giveitem" -> List.of("mace_stick", "spawner_boat", "slag_grapple", "slag_potion", "anvil_totem", "forge_warhammer", "vulcan_shield", "titan_draught", "slag_crossbow", "blacksmith_blade", "blacksmith_chestplate", "blacksmith_helmet", "blacksmith_boots");
+                case "givebook" -> List.of("sharpness", "protection", "unbreaking", "efficiency", "power", "feather_falling", "fire_aspect", "looting", "fortune", "sweeping_edge", "thorns", "knockback", "punch", "respiration", "aqua_affinity", "quick_charge", "piercing");
                 default -> List.of();
             };
             String prefix = args[1].toLowerCase(Locale.ROOT);
