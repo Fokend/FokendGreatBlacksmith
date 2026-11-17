@@ -3,3 +3,10 @@ build/
 .idea/
 *.iml
 out/
+
+# Models and textures are private (shared with projects personally, not open source)
+resourcepack/
+*.zip
+*.png
+*.bbmodel
+assets/
