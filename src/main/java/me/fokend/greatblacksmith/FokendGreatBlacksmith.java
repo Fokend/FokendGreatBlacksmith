@@ -1726,6 +1726,7 @@ public final class FokendGreatBlacksmith extends JavaPlugin implements Listener,
         ItemStack item = new ItemStack(Material.MACE);
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
+            applyModel(meta, NamespacedKey.minecraft("mace"), 40006);
             meta.displayName(mm.deserialize("<gradient:#ff4500:#ff8c00><bold>⚒ Кузнечный Молот Вулкана ✦</bold></gradient>")
                     .decoration(TextDecoration.ITALIC, false));
             meta.lore(List.of(
@@ -1750,6 +1751,7 @@ public final class FokendGreatBlacksmith extends JavaPlugin implements Listener,
         ItemStack item = new ItemStack(Material.SHIELD);
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
+            applyModel(meta, NamespacedKey.minecraft("shield"), 40007);
             meta.displayName(mm.deserialize("<gradient:#e65c00:#f9d423><bold>🛡 Бастион Гефеста ✦</bold></gradient>")
                     .decoration(TextDecoration.ITALIC, false));
             meta.lore(List.of(
@@ -1790,6 +1792,7 @@ public final class FokendGreatBlacksmith extends JavaPlugin implements Listener,
         ItemStack item = new ItemStack(Material.CROSSBOW);
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
+            applyModel(meta, NamespacedKey.minecraft("crossbow"), 40008);
             meta.displayName(mm.deserialize("<gradient:#ff0844:#ffb199><bold>✦ Шлаковый Огнемёт Кузнеца ✦</bold></gradient>")
                     .decoration(TextDecoration.ITALIC, false));
             meta.lore(List.of(
